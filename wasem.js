@@ -91,8 +91,8 @@ const kernel = (function () {
   };
 }());
 
-export function load(path) {
-  const imports = {
+export function load(path, opts) {
+  const default_imports = {
     env: {
       memory: kernel.memory,
       __indirect_function_table: new WebAssembly.Table({initial: 255, maximum: 255, element: 'anyfunc'}),
@@ -115,6 +115,8 @@ export function load(path) {
     }
   };
 
+  opts = opts || {};
+
   return fetch(path).then(function(wasm) {
     let buffer;
     buffer = wasm.arrayBuffer();
@@ -124,6 +126,12 @@ export function load(path) {
     wasm_module = WebAssembly.compile(bytes);
     return wasm_module;
   }).then(function (wasm_module) {
+    let imports = default_imports;
+    if (opts.custom_imports !== undefined) {
+      for (const key in opts.custom_imports) {
+        imports.env[key] = opts.custom_imports[key];
+      }
+    }
     return WebAssembly.instantiate(wasm_module, imports);
   }).then(function(instance) {
     kernel.setHeapBase(instance.exports.__heap_base);
