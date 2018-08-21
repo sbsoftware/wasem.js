@@ -93,24 +93,22 @@ const kernel = (function () {
 
 export function load(path, opts) {
   const default_imports = {
-    env: {
-      memory: kernel.memory,
-      __indirect_function_table: new WebAssembly.Table({initial: 255, maximum: 255, element: 'anyfunc'}),
-      __syscall0: function(a1) { return kernel.syscall(arguments); },
-      __syscall1: function(a1, a2) { return kernel.syscall(arguments); },
-      __syscall2: function(a1, a2, a3) { return kernel.syscall(arguments); },
-      __syscall3: function(a1, a2, a3, a4) { return kernel.syscall(arguments); },
-      __syscall4: function(a1, a2, a3, a4, a5) { return kernel.syscall(arguments); },
-      __syscall5: function(a1, a2, a3, a4, a5, a6) { return kernel.syscall(arguments); },
-      __syscall6: function(a1, a2, a3, a4, a5, a6, a7) { return kernel.syscall(arguments); },
-      setjmp: function(a1) { console.debug("setjmp call"); return 0; },
-      longjmp: function(a1, a2) { 
-        console.debug("longjmp call");
-        try {
-          throw new Error;
-        } catch {
-          console.debug("catched error");
-        }
+    memory: kernel.memory,
+    __indirect_function_table: new WebAssembly.Table({initial: 255, maximum: 255, element: 'anyfunc'}),
+    __syscall0: function(a1) { return kernel.syscall(arguments); },
+    __syscall1: function(a1, a2) { return kernel.syscall(arguments); },
+    __syscall2: function(a1, a2, a3) { return kernel.syscall(arguments); },
+    __syscall3: function(a1, a2, a3, a4) { return kernel.syscall(arguments); },
+    __syscall4: function(a1, a2, a3, a4, a5) { return kernel.syscall(arguments); },
+    __syscall5: function(a1, a2, a3, a4, a5, a6) { return kernel.syscall(arguments); },
+    __syscall6: function(a1, a2, a3, a4, a5, a6, a7) { return kernel.syscall(arguments); },
+    setjmp: function(a1) { console.debug("setjmp call"); return 0; },
+    longjmp: function(a1, a2) {
+      console.debug("longjmp call");
+      try {
+        throw new Error;
+      } catch {
+        console.debug("catched error");
       }
     }
   };
@@ -126,13 +124,16 @@ export function load(path, opts) {
     wasm_module = WebAssembly.compile(bytes);
     return wasm_module;
   }).then(function (wasm_module) {
-    let imports = default_imports;
+    let imports = {};
+    for (let key in default_imports) {
+      imports[key] = default_imports[key];
+    }
     if (opts.custom_imports !== undefined) {
-      for (const key in opts.custom_imports) {
-        imports.env[key] = opts.custom_imports[key];
+      for (let key in opts.custom_imports) {
+        imports[key] = opts.custom_imports[key];
       }
     }
-    return WebAssembly.instantiate(wasm_module, imports);
+    return WebAssembly.instantiate(wasm_module, {env: imports});
   }).then(function(instance) {
     kernel.setHeapBase(instance.exports.__heap_base);
     if (typeof instance.exports.main === 'function') {
