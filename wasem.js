@@ -1,4 +1,4 @@
-const kernel = (function () {
+export const kernel = (function () {
   const ERRNO = {
     EINVAL: 22,
     ENOSYS: 38
