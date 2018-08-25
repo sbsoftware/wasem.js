@@ -67,6 +67,19 @@ export const kernel = (function () {
       }
 
       return bytes;
+    },
+    265: function(clk_id, res_ptr) { // clock_gettime
+      let epoch_milliseconds, seconds;
+
+      if (clk_id !== 0) { return -ERRNO.EINVAL; }
+      // TODO return EFAULT when res_ptr points outside of memory bounds
+
+      epoch_milliseconds = Date.now();
+      seconds = (epoch_milliseconds / 1000) | 0;
+      heap32[res_ptr] = seconds;
+      heap32[res_ptr + 1] = epoch_milliseconds - (seconds * 1000);
+
+      return 0;
     }
   };
   const syscall = function() {
