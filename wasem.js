@@ -7,6 +7,7 @@ export const kernel = (function () {
   const memory = new WebAssembly.Memory({initial: 128});
   const heap32 = new Uint32Array(memory.buffer);
   const MEMORY_PAGE_SIZE = 65336;
+  const decoder = new TextDecoder('utf-8');
   let HEAP_BASE;
   let HEAP_END;
 
@@ -23,6 +24,10 @@ export const kernel = (function () {
     console.debug("Old Heap end: " + HEAP_END);
     HEAP_END = newEnd;
     console.debug("New Heap end: " + HEAP_END);
+  }
+
+  function read_str(ptr, len) {
+    return decoder.decode(memory.buffer.slice(ptr, ptr + len));
   }
 
   const syscallMap = {
@@ -54,7 +59,7 @@ export const kernel = (function () {
 
         if (len == 0) { continue; }
 
-        str = new TextDecoder('utf-8').decode(memory.buffer.slice(ptr, ptr+len));
+        str = read_str(ptr, len);
         if (str !== '\n') {
           console.log(str);
         }
@@ -87,7 +92,8 @@ export const kernel = (function () {
     ERRNO: ERRNO,
     memory: memory,
     syscall: syscall,
-    setHeapBase: setHeapBase
+    setHeapBase: setHeapBase,
+    read_str: read_str
   };
 }());
 
