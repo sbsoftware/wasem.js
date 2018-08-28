@@ -129,7 +129,6 @@ export const kernel = (function () {
 export function load(path, opts) {
   const default_imports = {
     memory: kernel.memory,
-    __indirect_function_table: new WebAssembly.Table({initial: 255, maximum: 255, element: 'anyfunc'}),
     __syscall: function(nr, arg_ptr) { return kernel.memarg_syscall(nr, arg_ptr); },
     __syscall0: function(nr) { return kernel.syscall.apply(kernel, arguments); },
     __syscall1: function(nr, a1) { return kernel.syscall.apply(kernel, arguments); },
