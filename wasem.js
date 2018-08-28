@@ -29,6 +29,11 @@ export const kernel = (function () {
   }
 
   const syscallMap = {
+    4: function(fd, ptr, len) { // write
+      if (fd > 2) return -EINVAL;
+      console.log(read_str(ptr, len));
+      return len;
+    },
     45: function(addr) { // brk
       let newHeapEnd;
       // TODO grow memory if needed
