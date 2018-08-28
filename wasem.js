@@ -1,4 +1,6 @@
 export const kernel = (function () {
+  const _this = this;
+
   const ERRNO = {
     EINVAL: 22,
     ENOSYS: 38
@@ -83,14 +85,14 @@ export const kernel = (function () {
     }
   };
   const syscall = function() {
-    const syscallNumber = arguments[0][0];
-    const args = Array.from(arguments[0]).slice(1);
+    const syscallNumber = arguments[0];
+    const args = Array.from(arguments).slice(1);
     let syscallFunc, res;
 
     console.debug("syscall " + syscallNumber + " with " + (arguments[0].length - 1) + " arguments: " + args);
     if (syscallMap.hasOwnProperty(syscallNumber)) {
       syscallFunc = syscallMap[syscallNumber];
-      res = syscallFunc.apply(null, args);
+      res = syscallFunc.apply(_this, args);
       console.debug("Implementation found, returning result: " + res);
       return res;
     } else {
@@ -101,10 +103,22 @@ export const kernel = (function () {
     }
   };
 
+  const memarg_syscall = function(nr, arg_ptr) {
+    const arg_ptr32 = arg_ptr / 4;
+    let args = [nr];
+
+    for (let i=0; i < 6; i++) {
+      args.push(heap32[arg_ptr32 + i]);
+    }
+
+    return syscall.apply(_this, args);
+  };
+
   return {
     ERRNO: ERRNO,
     memory: memory,
     syscall: syscall,
+    memarg_syscall: memarg_syscall,
     setHeapBase: setHeapBase,
     read_str: read_str
   };
@@ -114,13 +128,14 @@ export function load(path, opts) {
   const default_imports = {
     memory: kernel.memory,
     __indirect_function_table: new WebAssembly.Table({initial: 255, maximum: 255, element: 'anyfunc'}),
-    __syscall0: function(a1) { return kernel.syscall(arguments); },
-    __syscall1: function(a1, a2) { return kernel.syscall(arguments); },
-    __syscall2: function(a1, a2, a3) { return kernel.syscall(arguments); },
-    __syscall3: function(a1, a2, a3, a4) { return kernel.syscall(arguments); },
-    __syscall4: function(a1, a2, a3, a4, a5) { return kernel.syscall(arguments); },
-    __syscall5: function(a1, a2, a3, a4, a5, a6) { return kernel.syscall(arguments); },
-    __syscall6: function(a1, a2, a3, a4, a5, a6, a7) { return kernel.syscall(arguments); },
+    __syscall: function(nr, arg_ptr) { return kernel.memarg_syscall(nr, arg_ptr); },
+    __syscall0: function(nr) { return kernel.syscall.apply(kernel, arguments); },
+    __syscall1: function(nr, a1) { return kernel.syscall.apply(kernel, arguments); },
+    __syscall2: function(nr, a1, a2) { return kernel.syscall.apply(kernel, arguments); },
+    __syscall3: function(nr, a1, a2, a3) { return kernel.syscall.apply(kernel, arguments); },
+    __syscall4: function(nr, a1, a2, a3, a4) { return kernel.syscall.apply(kernel, arguments); },
+    __syscall5: function(nr, a1, a2, a3, a4, a5) { return kernel.syscall.apply(kernel, arguments); },
+    __syscall6: function(nr, a1, a2, a3, a4, a5, a6) { return kernel.syscall.apply(kernel, arguments); },
     setjmp: function(a1) { console.debug("setjmp call"); return 0; },
     longjmp: function(a1, a2) {
       console.debug("longjmp call");
