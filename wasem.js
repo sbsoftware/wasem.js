@@ -28,10 +28,25 @@ export const kernel = (function () {
     return decoder.decode(memory.buffer.slice(ptr, ptr + len));
   }
 
+  function __write_stdout(str) {
+    if (str === "\n") { return; }
+    console.log(str);
+  }
+
+  function __write_stderr(str) {
+    if (str === "\n") { return; }
+    console.err(str);
+  }
+
+  const file_descriptors = {
+    1: {write: __write_stdout},
+    2: {write: __write_stderr}
+  }
+
   const syscallMap = {
     4: function(fd, ptr, len) { // write
       if (fd > 2) return -EINVAL;
-      console.log(read_str(ptr, len));
+      file_descriptors[fd].write(read_str(ptr, len));
       return len;
     },
     45: function(addr) { // brk
@@ -62,10 +77,8 @@ export const kernel = (function () {
 
         if (len == 0) { continue; }
 
-        str = read_str(ptr, len);
-        if (str !== '\n') {
-          console.log(str);
-        }
+        file_descriptors[fd].write(read_str(ptr, len));
+
         bytes += len;
       }
 
