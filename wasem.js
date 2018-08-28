@@ -14,18 +14,14 @@ export const kernel = (function () {
   let HEAP_END;
 
   function setHeapBase(newBase) {
-    console.debug("Old Heap base: " + HEAP_BASE);
     HEAP_BASE = newBase;
-    console.debug("New Heap base: " + HEAP_BASE);
     if (HEAP_END === undefined || HEAP_END < HEAP_BASE) {
       HEAP_END = HEAP_BASE;
     }
   }
 
   function setHeapEnd(newEnd) {
-    console.debug("Old Heap end: " + HEAP_END);
     HEAP_END = newEnd;
-    console.debug("New Heap end: " + HEAP_END);
   }
 
   function read_str(ptr, len) {
