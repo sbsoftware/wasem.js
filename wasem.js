@@ -67,6 +67,7 @@ export const kernel = (function () {
       return bytes;
     },
     265: function(clk_id, res_ptr) { // clock_gettime
+      let res_ptr32 = res_ptr / 4;
       let epoch_milliseconds, seconds;
 
       if (clk_id !== 0) { return -ERRNO.EINVAL; }
@@ -74,8 +75,8 @@ export const kernel = (function () {
 
       epoch_milliseconds = Date.now();
       seconds = (epoch_milliseconds / 1000) | 0;
-      heap32[res_ptr] = seconds;
-      heap32[res_ptr + 1] = epoch_milliseconds - (seconds * 1000);
+      heap32[res_ptr32] = seconds;
+      heap32[res_ptr32 + 1] = epoch_milliseconds - (seconds * 1000);
 
       return 0;
     }
