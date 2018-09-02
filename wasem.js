@@ -2,14 +2,18 @@ export const kernel = (function () {
   const _this = this;
 
   const ERRNO = {
+    ENOENT: 2,
+    EBADF: 9,
     EINVAL: 22,
     ENOSYS: 38
   };
 
   const memory = new WebAssembly.Memory({initial: 128});
+  const heap8 = new Uint8Array(memory.buffer);
   const heap32 = new Uint32Array(memory.buffer);
   const MEMORY_PAGE_SIZE = 65336;
   const decoder = new TextDecoder('utf-8');
+  const encoder = new TextEncoder('utf-8');
   let HEAP_BASE;
   let HEAP_END;
 
@@ -25,7 +29,11 @@ export const kernel = (function () {
   }
 
   function read_str(ptr, len) {
-    return decoder.decode(memory.buffer.slice(ptr, ptr + len));
+    let str_bytes = [heap8[ptr]];
+    while(str_bytes.length !== len && heap8[ptr + str_bytes.length] !== 0) {
+      str_bytes.push(heap8[ptr + str_bytes.length]);
+    }
+    return decoder.decode(new Uint8Array(str_bytes));
   }
 
   function __write_stdout(str) {
@@ -35,19 +43,81 @@ export const kernel = (function () {
 
   function __write_stderr(str) {
     if (str === "\n") { return; }
-    console.err(str);
+    console.error(str);
   }
 
-  const file_descriptors = {
-    1: {write: __write_stdout},
-    2: {write: __write_stderr}
-  }
+  const FD_CLOEXEC = 1;
+  const F_SETFD = 2;
+
+  const file_table = (function () {
+    const file_descriptors = {
+      1: {write: __write_stdout},
+      2: {write: __write_stderr}
+    }
+
+    const read_dom_el = function(path, len) {
+      let str, res;
+      if (path === '/dev/document/html') {
+        str = document.getRootNode().children[0].outerHTML;
+      } else {
+        str = '';
+      }
+      res = str.slice(this.offset, this.offset + len);
+      this.offset = res.length;
+      return res;
+    }
+
+    const exists = function(fd) {
+      return file_descriptors.hasOwnProperty(fd);
+    }
+
+    return {
+      exists: exists,
+      get: function(fd) {
+        return file_descriptors[fd];
+      },
+      open: function(path, flags) {
+        let fd = 3;
+
+        // get lowest unoccupied file descriptor
+        while(exists(fd)) { fd++; }
+
+        file_descriptors[fd] = (function(path, flags) {
+          let context = {
+            offset: 0
+          }
+
+          return {
+            write: function(){},
+            read: read_dom_el.bind(context, path)
+          };
+        }(path, flags));
+        return fd;
+      }
+    };
+  }());
 
   const syscallMap = {
+    3: function(fd, buf_ptr, len) { // read
+      if (!file_table.exists(fd)) { return -ERRNO.EBADF; }
+      let str = file_table.get(fd).read(len);
+      let str_bytes = encoder.encode(str);
+      for (let i = 0; i < str_bytes.byteLength; i++) {
+        heap8[buf_ptr + i] = str_bytes[i];
+      }
+      return str_bytes.byteLength;
+    },
     4: function(fd, ptr, len) { // write
       if (fd > 2) return -EINVAL;
-      file_descriptors[fd].write(read_str(ptr, len));
+      file_table.get(fd).write(read_str(ptr, len));
       return len;
+    },
+    5: function(path_ptr, flags) { // open
+      const path = read_str(path_ptr);
+      if (path.slice(0, 18) !== '/dev/document/html') {
+        return -ERRNO.ENOENT;
+      }
+      return file_table.open(path, flags);
     },
     45: function(addr) { // brk
       let newHeapEnd;
@@ -77,12 +147,19 @@ export const kernel = (function () {
 
         if (len == 0) { continue; }
 
-        file_descriptors[fd].write(read_str(ptr, len));
+        file_table.get(fd).write(read_str(ptr, len));
 
         bytes += len;
       }
 
       return bytes;
+    },
+    221: function(fd, cmd, arg) { // fcntl
+      const file_descriptor = file_table.get(fd);
+      if (cmd === F_SETFD) {
+        file_descriptor.flags = file_descriptor.flags & arg;
+      }
+      return 0;
     },
     265: function(clk_id, res_ptr) { // clock_gettime
       let res_ptr32 = res_ptr / 4;
@@ -104,7 +181,7 @@ export const kernel = (function () {
     const args = Array.from(arguments).slice(1);
     let syscallFunc, res;
 
-    console.debug("syscall " + syscallNumber + " with " + (arguments[0].length - 1) + " arguments: " + args);
+    console.debug("syscall " + syscallNumber + " with " + (arguments.length - 1) + " arguments: " + args);
     if (syscallMap.hasOwnProperty(syscallNumber)) {
       syscallFunc = syscallMap[syscallNumber];
       res = syscallFunc.apply(_this, args);
