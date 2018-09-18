@@ -34,6 +34,7 @@ export function load(path, opts) {
     return wasm_module;
   }).then(function (wasm_module) {
     let imports = {};
+
     for (let key in default_imports) {
       imports[key] = default_imports[key];
     }
@@ -42,7 +43,25 @@ export function load(path, opts) {
         imports[key] = opts.custom_imports[key];
       }
     }
-    return WebAssembly.instantiate(wasm_module, {env: imports});
+    // Error handling for variable table sizes
+    // Don't do this at home
+    return WebAssembly.instantiate(wasm_module, {env: imports}).catch(function(err) {
+      let matches = err.message.match(/function\=\"(.+)\".*error: (.+)/);
+      let table_import_name = matches[1];
+
+      if (matches[2] === "table import requires a WebAssembly.Table") {
+        imports[table_import_name] = new WebAssembly.Table({initial: 1, maximum: 1, element: 'anyfunc'});
+      }
+
+      return WebAssembly.instantiate(wasm_module, {env: imports}).catch(function (err) {
+        let matches = err.message.match(/table import \d+ is smaller than initial (\d+)/);
+        let imported_table_size = matches[1];
+
+        imports[table_import_name] = new WebAssembly.Table({initial: imported_table_size, maximum: imported_table_size, element: 'anyfunc'});
+
+        return WebAssembly.instantiate(wasm_module, {env: imports});
+      });
+    });
   }).then(function(instance) {
     kernel.setHeapBase(instance.exports.__heap_base);
     if (typeof instance.exports.main === 'function') {
