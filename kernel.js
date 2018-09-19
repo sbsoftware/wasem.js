@@ -1,9 +1,5 @@
-const ERRNO = {
-  ENOENT: 2,
-  EBADF: 9,
-  EINVAL: 22,
-  ENOSYS: 38
-};
+import * as ERRNO from './errno.js';
+
 const MEMORY_PAGE_SIZE = 65336;
 
 const FD_CLOEXEC = 1;
@@ -219,7 +215,6 @@ export default (function () {
   let setjmpId = 0;
 
   return {
-    ERRNO: ERRNO,
     memory: memory,
     heap8: heap8,
     heap32: heap32,
