@@ -1,72 +1,54 @@
-import kernel from './kernel.js';
+import Memory from './memory.js';
+import SyscallHandler from './syscall.js';
 
-export function load(path, opts) {
-  const default_imports = {
-    memory: kernel.memory,
-    __syscall: function(nr, arg_ptr) { return kernel.memarg_syscall(nr, arg_ptr); },
-    __syscall0: function(nr) { return kernel.syscall.apply(kernel, arguments); },
-    __syscall1: function(nr, a1) { return kernel.syscall.apply(kernel, arguments); },
-    __syscall2: function(nr, a1, a2) { return kernel.syscall.apply(kernel, arguments); },
-    __syscall3: function(nr, a1, a2, a3) { return kernel.syscall.apply(kernel, arguments); },
-    __syscall4: function(nr, a1, a2, a3, a4) { return kernel.syscall.apply(kernel, arguments); },
-    __syscall5: function(nr, a1, a2, a3, a4, a5) { return kernel.syscall.apply(kernel, arguments); },
-    __syscall6: function(nr, a1, a2, a3, a4, a5, a6) { return kernel.syscall.apply(kernel, arguments); },
-    setjmp: function(a1) { console.debug("setjmp call"); return 0; },
-    longjmp: function(a1, a2) {
-      console.debug("longjmp call");
-      try {
-        throw new Error;
-      } catch {
-        console.debug("catched error");
-      }
-    }
+export function spawn(source, custom_imports) {
+  const memory = new Memory();
+  const syscall_handler = new SyscallHandler(memory);
+  let imports = {
+    memory: memory.memory,
+    __indirect_function_table: new WebAssembly.Table({initial: 1, maximum: 1, element: 'anyfunc'}),
+    __syscall: function(nr, arg_ptr) { return syscall_handler.memarg_syscall(nr, arg_ptr); },
+    __syscall0: function(nr) { return syscall_handler.syscall(nr); },
+    __syscall1: function(nr, a1) { return syscall_handler.syscall(nr, a1); },
+    __syscall2: function(nr, a1, a2) { return syscall_handler.syscall(nr, a1, a2); },
+    __syscall3: function(nr, a1, a2, a3) { return syscall_handler.syscall(nr, a1, a2, a3); },
+    __syscall4: function(nr, a1, a2, a3, a4) { return syscall_handler.syscall(nr, a1, a4, a3, a4); },
+    __syscall5: function(nr, a1, a2, a3, a4, a5) { return syscall_handler.syscall(nr, a1, a2, a3, a4, a5); },
+    __syscall6: function(nr, a1, a2, a3, a4, a5, a6) { return syscall_handler.syscall(nr, a1, a2, a3, a4, a5, a6); },
+    setjmp: function(jmp_buf_ptr) { console.debug("setjmp"); return 0; },
+    longjmp: function(jmp_buf_ptr, retval) { console.debug("longjmp"); }
   };
 
-  opts = opts || {};
+  custom_imports = custom_imports || {};
+  for (let key in custom_imports) {
+    imports[key] = custom_imports[key];
+  }
 
-  return fetch(path).then(function(wasm) {
-    let buffer;
-    buffer = wasm.arrayBuffer();
-    return buffer;
-  }).then(function(bytes) {
-    let wasm_module;
-    wasm_module = WebAssembly.compile(bytes);
-    return wasm_module;
-  }).then(function (wasm_module) {
-    let imports = {};
+  return WebAssembly.compileStreaming(source).then(function(wasm_module) {
+    const error_handler = function(err) {
+      // table entry has too small size
+      let matches = err.message.match(/table import \d+ is smaller than initial (\d+)/);
 
-    for (let key in default_imports) {
-      imports[key] = default_imports[key];
-    }
-    if (opts.custom_imports !== undefined) {
-      for (let key in opts.custom_imports) {
-        imports[key] = opts.custom_imports[key];
+      if (matches === null) { throw err; }
+
+      let imported_table_size = matches[1];
+      imports['__indirect_function_table'] = new WebAssembly.Table({initial: imported_table_size, maximum: imported_table_size, element: 'anyfunc'});
+
+      return instantiate();
+    };
+
+    const instantiate = function() {
+      return WebAssembly.instantiate(wasm_module, {env: imports}).catch(error_handler);
+    };
+
+    return instantiate().then(function(instance) {
+      if (instance.exports.__heap_base) {
+        memory.set_heap_base(instance.exports.__heap_base);
       }
-    }
-    // Error handling for variable table sizes
-    // Don't do this at home
-    return WebAssembly.instantiate(wasm_module, {env: imports}).catch(function(err) {
-      let matches = err.message.match(/function\=\"(.+)\".*error: (.+)/);
-      let table_import_name = matches[1];
-
-      if (matches[2] === "table import requires a WebAssembly.Table") {
-        imports[table_import_name] = new WebAssembly.Table({initial: 1, maximum: 1, element: 'anyfunc'});
+      if (typeof instance.exports.main === 'function') {
+        instance.exports.main();
       }
-
-      return WebAssembly.instantiate(wasm_module, {env: imports}).catch(function (err) {
-        let matches = err.message.match(/table import \d+ is smaller than initial (\d+)/);
-        let imported_table_size = matches[1];
-
-        imports[table_import_name] = new WebAssembly.Table({initial: imported_table_size, maximum: imported_table_size, element: 'anyfunc'});
-
-        return WebAssembly.instantiate(wasm_module, {env: imports});
-      });
+      return instance;
     });
-  }).then(function(instance) {
-    kernel.setHeapBase(instance.exports.__heap_base);
-    if (typeof instance.exports.main === 'function') {
-      instance.exports.main();
-    }
-    return instance;
   });
 };
